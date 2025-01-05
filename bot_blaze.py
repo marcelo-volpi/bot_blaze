@@ -16,39 +16,49 @@ nav = webdriver.Chrome(options=chrome_options)
 
 # Mensagens de status
 msg_ativo = "✅ Bot Ativo"
-aviso_4_generico = "⚠️ Atenção para entrada na cor oposta: "
-aviso_falso = "🚫 Alarme falso: padrão quebrado."
-sinal_vermelho = "🔴 Sequência de 5 Vermelhos - Entrar no Preto."
-sinal_preto = "⚫ Sequência de 5 Pretos - Entrar no Vermelho."
-sinal_gale = "📢 Fazer Gale - Repetindo entrada."
-proteger_branco_7 = "⚪ Proteger patrimônio com 7% no Branco."
-proteger_branco_14 = "⚪ Proteger patrimônio com 14% no Branco."
+aviso_generico = "⚠️ Atenção para entrada na cor oposta:  "
+aviso_falso = "🚫 Alarme falso: Aguardando novo padrão 🚫"
+sinal_vermelho = "⚫⚫ Atenção: Entrar no Preto ⚫⚫"
+sinal_preto = "🔴🔴 Atenção entrar no Vermelho 🔴🔴"
+sinal_gale = "📢 GALE - Duplicar aposta repetindo a entrada."
+proteger_branco_10 = "⚪ Proteger patrimônio com 10% no Branco."
 msg_encerrado = "❌ Bot Encerrado"
 
 # Configuração do Telegram
 token = "5489024933:AAEqYViiJSnwcfs_YDpGY-VDWrLlJOepBAE"
 chat_id = "-1001599159882"
 
+# Variáveis configuráveis pelo usuário
+sequencia_para_entrada = 4  # Configuração inicial: 3 cores iguais para entrada
+notificacoes_ativas = True  # Variável para ativar/desativar notificações do Telegram
+
 # Função para enviar mensagem no Telegram
 def enviar_mensagem(mensagem):
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    data = {"chat_id": chat_id, "text": mensagem}
-    try:
-        requests.post(url, data)
-    except Exception as e:
-        print(f"Erro ao enviar mensagem: {e}")
+    if notificacoes_ativas:
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        data = {"chat_id": chat_id, "text": mensagem}
+        try:
+            requests.post(url, data)
+        except Exception as e:
+            print(f"Erro ao enviar mensagem: {e}")
+    else:
+        print(f"Notificação desativada: {mensagem}")
 
 # Variáveis globais para controle
 historico_cores = []
 fazendo_gale = False
 ultima_lista = []  # Armazena a última lista capturada
-alertado_4 = False
-banca = 260  # Banca inicial em reais
-aposta = 20  # Valor da aposta inicial
+alertado = False
+entrada_realizada = False  # Controla se a entrada foi realizada
+banca = 1000  # Banca inicial em reais
+aposta = 50  # Valor da aposta inicial
 vitorias = 0
 perdas = 0
+aguardando_resultado = False  # Variável para aguardar o próximo giro após entrada
 resetar_entrada = False  # Variável para resetar padrão após conclusão de Gale
-primeira_entrada_feita = False  # Controla se a primeira entrada foi feita
+cor_da_entrada = None  # Armazena a cor da entrada para verificar vitória
+banca_inicial = banca  # Armazena o valor inicial da banca para cálculo de vitórias e derrotas
+contador_atualizado = False  # Garante que vitória ou derrota seja contabilizada apenas uma vez
 
 # Acessar a página do jogo
 def acessar_pagina():
@@ -90,148 +100,125 @@ def capturar_resultados():
 
 # Verificar padrões e enviar sinais
 def verificar_padroes(cores):
-    global fazendo_gale, alertado_4, banca, aposta, vitorias, perdas, resetar_entrada, primeira_entrada_feita
+    global fazendo_gale, alertado, entrada_realizada, aguardando_resultado, banca, aposta, vitorias, perdas, resetar_entrada, cor_da_entrada, banca_inicial, contador_atualizado
 
-    # Valor de proteção no branco (7% da aposta)
-    protecao_branco_7 = aposta * 0.07
-    protecao_branco_14 = (aposta * 2) * 0.14
+    # Valor de proteção no branco (10% da aposta)
+    protecao_branco = aposta * 0.10
 
-    # Reseta o estado caso o padrão tenha sido concluído
+    # Reset do estado somente após vitória, derrota ou alarme falso
     if resetar_entrada:
-        print("Aguardando novo padrão para entrar.")
-        if cores[-5:] != ["Vermelho"] * 5 and cores[-5:] != ["Preto"] * 5:
-            resetar_entrada = False
-            primeira_entrada_feita = False
-            print("Novo padrão detectado. Pronto para novas entradas.")
+        print("Resetando padrão após conclusão do ciclo anterior.")
+        resetar_entrada = False
+        entrada_realizada = False
+        alertado = False
+        aguardando_resultado = False
+        cor_da_entrada = None
+        contador_atualizado = False
         return
 
-    # Verifica se há 4 cores consecutivas e envia alerta apenas uma vez
-    if cores[-4:] == ["Vermelho"] * 4 and not alertado_4 and not primeira_entrada_feita:
-        print(aviso_4_generico + "Preto")
-        enviar_mensagem(aviso_4_generico + "Preto")
-        alertado_4 = True
-    elif cores[-4:] == ["Preto"] * 4 and not alertado_4 and not primeira_entrada_feita:
-        print(aviso_4_generico + "Vermelho")
-        enviar_mensagem(aviso_4_generico + "Vermelho")
-        alertado_4 = True
-
-    # Verifica se a sequência foi interrompida antes de 5 cores iguais
-    if alertado_4 and cores[-5:] != ["Vermelho"] * 5 and cores[-5:] != ["Preto"] * 5:
-        print(aviso_falso)
-        enviar_mensagem(aviso_falso)
-        alertado_4 = False
-
-    # Verifica se há 5 cores consecutivas para entrada
-    if cores[-5:] == ["Vermelho"] * 5 and not primeira_entrada_feita:
-        print(sinal_vermelho)
-        enviar_mensagem(sinal_vermelho)
-        enviar_mensagem(proteger_branco_7)
-        alertado_4 = False  # Reseta o alerta de 4
-        primeira_entrada_feita = True
-        banca -= aposta + protecao_branco_7  # Reduz o valor apostado e a proteção da banca
-        # Simula resultado da aposta
-        if cores[-1] == "Preto":
-            ganho = aposta * 2 - protecao_branco_7
-            banca += ganho
-            vitorias += 1
-            print(f"✅ Vitória! Banca atual: R${banca:.2f}")
-            enviar_mensagem(f"✅ Vitória! Banca atual: R${banca:.2f}")
-            resetar_entrada = True  # Define para esperar novo padrão
-        elif cores[-1] == "Branco":
-            ganho_branco = protecao_branco_7 * 14
-            banca += ganho_branco
-            print(f"⚪ Vitória no Branco! Ganhou R${ganho_branco:.2f}. Banca atual: R${banca:.2f}")
-            enviar_mensagem(f"⚪ Vitória no Branco! Ganhou R${ganho_branco:.2f}. Banca atual: R${banca:.2f}")
+    # Aguardar o próximo resultado após entrada
+    if aguardando_resultado:
+        if cores[-1] == cor_da_entrada:
+            ganho = aposta * 2
+            banca += ganho - (aposta + protecao_branco)  # Ganho subtraído da proteção do branco
+            if not contador_atualizado:
+                vitorias += 1
+                contador_atualizado = True
+            percentual_vitorias = (vitorias / (vitorias + perdas)) * 100 if (vitorias + perdas) > 0 else 0
+            print(f"✅ Vitória! Ganho: R${ganho - (aposta + protecao_branco):.2f}. Banca atual: R${banca:.2f}")
+            enviar_mensagem(f"✅ Vitória! Ganho: R${ganho - (aposta + protecao_branco):.2f}. Banca atual: R${banca:.2f}\n🏆 Vitórias: {vitorias} ({percentual_vitorias:.2f}% de sucesso)")
             resetar_entrada = True
-        else:
-            fazendo_gale = True
-
-    elif cores[-5:] == ["Preto"] * 5 and not primeira_entrada_feita:
-        print(sinal_preto)
-        enviar_mensagem(sinal_preto)
-        enviar_mensagem(proteger_branco_7)
-        alertado_4 = False  # Reseta o alerta de 4
-        primeira_entrada_feita = True
-        banca -= aposta + protecao_branco_7  # Reduz o valor apostado e a proteção da banca
-        # Simula resultado da aposta
-        if cores[-1] == "Vermelho":
-            ganho = aposta * 2 - protecao_branco_7
-            banca += ganho
-            vitorias += 1
-            print(f"✅ Vitória! Banca atual: R${banca:.2f}")
-            enviar_mensagem(f"✅ Vitória! Banca atual: R${banca:.2f}")
-            resetar_entrada = True  # Define para esperar novo padrão
         elif cores[-1] == "Branco":
-            ganho_branco = protecao_branco_7 * 14
-            banca += ganho_branco
-            print(f"⚪ Vitória no Branco! Ganhou R${ganho_branco:.2f}. Banca atual: R${banca:.2f}")
-            enviar_mensagem(f"⚪ Vitória no Branco! Ganhou R${ganho_branco:.2f}. Banca atual: R${banca:.2f}")
+            ganho_branco = protecao_branco * 14  # Branco paga 14 vezes o valor
+            banca += ganho_branco - (aposta + protecao_branco)
+            if not contador_atualizado:
+                vitorias += 1
+                contador_atualizado = True
+            percentual_vitorias = (vitorias / (vitorias + perdas)) * 100 if (vitorias + perdas) > 0 else 0
+            print(f"⚪ Branco! Proteção ativada. Banca atual: R${banca:.2f}")
+            enviar_mensagem(f"⚪ Branco! Proteção ativada. Banca atual: R${banca:.2f}\n🏆 Vitórias: {vitorias} ({percentual_vitorias:.2f}% de sucesso)")
             resetar_entrada = True
-        else:
-            fazendo_gale = True
-
-    # Verifica Gale ativo
-    elif fazendo_gale:
-        enviar_mensagem(proteger_branco_14)
-        banca -= (aposta * 2) + protecao_branco_14  # Reduz o valor do Gale e proteção da banca
-        if cores[-1] == "Preto" or cores[-1] == "Vermelho":
-            ganho = (aposta * 4) - protecao_branco_14
-            banca += ganho
-            vitorias += 1
-            print(f"✅ Vitória no Gale! Banca atual: R${banca:.2f}")
-            enviar_mensagem(f"✅ Vitória no Gale! Banca atual: R${banca:.2f}")
-            fazendo_gale = False
-            resetar_entrada = True  # Define para esperar novo padrão
-        elif cores[-1] == "Branco":
-            ganho_branco = protecao_branco_14 * 14
-            banca += ganho_branco
-            print(f"⚪ Vitória no Branco durante Gale! Ganhou R${ganho_branco:.2f}. Banca atual: R${banca:.2f}")
-            enviar_mensagem(f"⚪ Vitória no Branco durante Gale! Ganhou R${ganho_branco:.2f}. Banca atual: R${banca:.2f}")
-            fazendo_gale = False
-            resetar_entrada = True
-        else:
+        elif cores[-1] != cor_da_entrada and fazendo_gale:
             perdas += 1
-            print(f"❌ Perda no Gale! Banca atual: R${banca:.2f}")
-            enviar_mensagem(f"❌ Perda no Gale! Banca atual: R${banca:.2f}")
+            banca -= aposta + protecao_branco  # Ajusta a banca com a perda do Gale
+            percentual_vitorias = (vitorias / (vitorias + perdas)) * 100 if (vitorias + perdas) > 0 else 0
+            print("🚫 Derrota no Gale. Resetando padrão e aguardando novo ciclo.")
+            print(f"📉 Banca atual após derrota: R${banca:.2f}")
+            enviar_mensagem(f"🚫 Derrota no Gale. Resetando padrão e aguardando novo ciclo.\nBanca atual: R${banca:.2f}\n🏆 Vitórias: {vitorias} ({percentual_vitorias:.2f}% de sucesso)")
             fazendo_gale = False
             resetar_entrada = True
+        elif cores[-1] != cor_da_entrada:
+            print(sinal_gale)
+            print(proteger_branco_10)
+            enviar_mensagem(sinal_gale)
+            enviar_mensagem(proteger_branco_10)
+            fazendo_gale = True
+            banca -= aposta + protecao_branco
+            aposta *= 2  # Dobra a aposta
+            resetar_entrada = False
 
-    # Exibir estatísticas apenas após vitória ou derrota final
-    if primeira_entrada_feita and (not fazendo_gale or resetar_entrada):
-        total_tentativas = vitorias + perdas
-        if total_tentativas > 0:
-            porcentagem_vitorias = (vitorias / total_tentativas) * 100
-            porcentagem_perdas = (perdas / total_tentativas) * 100
-            print(f"📊 Estatísticas: {vitorias} Vitórias ({porcentagem_vitorias:.2f}%), {perdas} Derrotas ({porcentagem_perdas:.2f}%)")
-            enviar_mensagem(f"📊 Estatísticas: {vitorias} Vitórias ({porcentagem_vitorias:.2f}%), {perdas} Derrotas ({porcentagem_perdas:.2f}%)")
+        banca_inicial = banca  # Atualiza o valor inicial da banca para a próxima comparação
+        return
 
-# Comparar listas para verificar alterações
-def lista_alterada(nova_lista):
-    global ultima_lista
-    if nova_lista != ultima_lista:
-        ultima_lista = nova_lista
-        return True
-    return False
+    # Verifica se há n-1 cores consecutivas e envia alerta apenas uma vez
+    if not alertado:
+        if cores[-(sequencia_para_entrada-1):] == ["Vermelho"] * (sequencia_para_entrada-1):
+            print(aviso_generico + "Preto")
+            print(proteger_branco_10)
+            enviar_mensagem(aviso_generico + "Preto")
+            enviar_mensagem(proteger_branco_10)
+            alertado = True
+        elif cores[-(sequencia_para_entrada-1):] == ["Preto"] * (sequencia_para_entrada-1):
+            print(aviso_generico + "Vermelho")
+            print(proteger_branco_10)
+            enviar_mensagem(aviso_generico + "Vermelho")
+            enviar_mensagem(proteger_branco_10)
+            alertado = True
 
-# Loop principal com tratamento de erros
+    # Verifica se há n-1 cores iguais + 1 cor diferente (alarme falso)
+    if alertado and not entrada_realizada:
+        if cores[-sequencia_para_entrada:-1] == ["Vermelho"] * (sequencia_para_entrada-1) and cores[-1] != "Vermelho":
+            print(aviso_falso)
+            enviar_mensagem(aviso_falso)
+            resetar_entrada = True
+        elif cores[-sequencia_para_entrada:-1] == ["Preto"] * (sequencia_para_entrada-1) and cores[-1] != "Preto":
+            print(aviso_falso)
+            enviar_mensagem(aviso_falso)
+            resetar_entrada = True
+
+    # Verifica se há n cores consecutivas para realizar entrada
+    if alertado and not entrada_realizada:
+        if cores[-sequencia_para_entrada:] == ["Vermelho"] * sequencia_para_entrada:
+            print(sinal_vermelho.format(n=sequencia_para_entrada))
+            enviar_mensagem(sinal_vermelho.format(n=sequencia_para_entrada))
+            entrada_realizada = True
+            cor_da_entrada = "Preto"  # Entrada será no Preto
+            aguardando_resultado = True
+        elif cores[-sequencia_para_entrada:] == ["Preto"] * sequencia_para_entrada:
+            print(sinal_preto.format(n=sequencia_para_entrada))
+            enviar_mensagem(sinal_preto.format(n=sequencia_para_entrada))
+            entrada_realizada = True
+            cor_da_entrada = "Vermelho"  # Entrada será no Vermelho
+            aguardando_resultado = True
+
+# Início do programa
 try:
     acessar_pagina()
-    for _ in range(2880):  # Aproximadamente 24 horas com intervalos de 30 segundos
+    while True:
         print("Iniciando nova iteração do loop...")
         resultados = capturar_resultados()
-        if resultados and lista_alterada(resultados):
-            historico_cores.extend(resultados)  # Atualiza o histórico
-            historico_cores = historico_cores[-10:]  # Mantém apenas os últimos 10
-            verificar_padroes(historico_cores)
+        if resultados and resultados != ultima_lista:
+            ultima_lista = resultados
+            verificar_padroes(resultados)
         else:
             print("Nenhuma alteração na lista capturada.")
-        time.sleep(7)  # Intervalo reduzido para depuração
+        time.sleep(7)  # Intervalo entre iterações
 except Exception as e:
     erro_msg = f"❌ Bot encerrado devido a um erro: {e}"
     print(erro_msg)
     enviar_mensagem(erro_msg)
 finally:
-    # Mensagem de encerramento ao finalizar
     print(msg_encerrado)
     enviar_mensagem(msg_encerrado)
     nav.quit()
+
