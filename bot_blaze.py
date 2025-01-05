@@ -4,6 +4,11 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
 import requests
+from dotenv import load_dotenv
+import os
+
+# Carrega as variáveis do .env
+load_dotenv()
 
 # Configurações do navegador
 chrome_options = webdriver.ChromeOptions()
@@ -25,11 +30,11 @@ proteger_branco_10 = "⚪ Proteger patrimônio com 10% no Branco."
 msg_encerrado = "❌ Bot Encerrado"
 
 # Configuração do Telegram
-token = "5489024933:AAEqYViiJSnwcfs_YDpGY-VDWrLlJOepBAE"
-chat_id = "-1001599159882"
+token = os.getenv("TOKEN_TELEGRAM")
+chat_id = os.getenv("CHAT_ID")
 
 # Variáveis configuráveis pelo usuário
-sequencia_para_entrada = 4  # Configuração inicial: 3 cores iguais para entrada
+sequencia_para_entrada = 3  # Configuração inicial: 3 cores iguais para entrada
 notificacoes_ativas = True  # Variável para ativar/desativar notificações do Telegram
 
 # Função para enviar mensagem no Telegram
@@ -59,6 +64,7 @@ resetar_entrada = False  # Variável para resetar padrão após conclusão de Ga
 cor_da_entrada = None  # Armazena a cor da entrada para verificar vitória
 banca_inicial = banca  # Armazena o valor inicial da banca para cálculo de vitórias e derrotas
 contador_atualizado = False  # Garante que vitória ou derrota seja contabilizada apenas uma vez
+ganho_acumulado = 0  # Acumula os ganhos totais
 
 # Acessar a página do jogo
 def acessar_pagina():
@@ -100,7 +106,7 @@ def capturar_resultados():
 
 # Verificar padrões e enviar sinais
 def verificar_padroes(cores):
-    global fazendo_gale, alertado, entrada_realizada, aguardando_resultado, banca, aposta, vitorias, perdas, resetar_entrada, cor_da_entrada, banca_inicial, contador_atualizado
+    global fazendo_gale, alertado, entrada_realizada, aguardando_resultado, banca, aposta, vitorias, perdas, resetar_entrada, cor_da_entrada, banca_inicial, contador_atualizado, ganho_acumulado
 
     # Valor de proteção no branco (10% da aposta)
     protecao_branco = aposta * 0.10
@@ -120,40 +126,44 @@ def verificar_padroes(cores):
     if aguardando_resultado:
         if cores[-1] == cor_da_entrada:
             ganho = aposta * 2
-            banca += ganho - (aposta + protecao_branco)  # Ganho subtraído da proteção do branco
+            lucro = ganho - (protecao_branco + aposta)  # Ganho líquido
+            banca += lucro
+            ganho_acumulado += lucro  # Atualiza o ganho acumulado
             if not contador_atualizado:
                 vitorias += 1
                 contador_atualizado = True
             percentual_vitorias = (vitorias / (vitorias + perdas)) * 100 if (vitorias + perdas) > 0 else 0
-            print(f"✅ Vitória! Ganho: R${ganho - (aposta + protecao_branco):.2f}. Banca atual: R${banca:.2f}")
-            enviar_mensagem(f"✅ Vitória! Ganho: R${ganho - (aposta + protecao_branco):.2f}. Banca atual: R${banca:.2f}\n🏆 Vitórias: {vitorias} ({percentual_vitorias:.2f}% de sucesso)")
+            print(f"✅ Vitória! Ganho: R${lucro:.2f}. Banca atual: R${banca:.2f}")
+            enviar_mensagem(f"✅ Vitória! Ganho: R${lucro:.2f}. Banca atual: R${banca:.2f}\n🏆 Vitórias: {vitorias} ({percentual_vitorias:.2f}% de sucesso)\n💰 Ganho acumulado: R${ganho_acumulado:.2f}")
             resetar_entrada = True
         elif cores[-1] == "Branco":
             ganho_branco = protecao_branco * 14  # Branco paga 14 vezes o valor
-            banca += ganho_branco - (aposta + protecao_branco)
+            lucro = ganho_branco - (aposta + protecao_branco)
+            banca += lucro
+            ganho_acumulado += lucro  # Atualiza o ganho acumulado
             if not contador_atualizado:
                 vitorias += 1
                 contador_atualizado = True
             percentual_vitorias = (vitorias / (vitorias + perdas)) * 100 if (vitorias + perdas) > 0 else 0
             print(f"⚪ Branco! Proteção ativada. Banca atual: R${banca:.2f}")
-            enviar_mensagem(f"⚪ Branco! Proteção ativada. Banca atual: R${banca:.2f}\n🏆 Vitórias: {vitorias} ({percentual_vitorias:.2f}% de sucesso)")
+            enviar_mensagem(f"⚪ Branco! Proteção ativada. Banca atual: R${banca:.2f}\n🏆 Vitórias: {vitorias} ({percentual_vitorias:.2f}% de sucesso)\n💰 Ganho acumulado: R${ganho_acumulado:.2f}")
             resetar_entrada = True
         elif cores[-1] != cor_da_entrada and fazendo_gale:
             perdas += 1
             banca -= aposta + protecao_branco  # Ajusta a banca com a perda do Gale
-            percentual_vitorias = (vitorias / (vitorias + perdas)) * 100 if (vitorias + perdas) > 0 else 0
+            percentual_vitorias = (perdas / (vitorias + perdas)) * 100 if (vitorias + perdas) > 0 else 0
             print("🚫 Derrota no Gale. Resetando padrão e aguardando novo ciclo.")
             print(f"📉 Banca atual após derrota: R${banca:.2f}")
-            enviar_mensagem(f"🚫 Derrota no Gale. Resetando padrão e aguardando novo ciclo.\nBanca atual: R${banca:.2f}\n🏆 Vitórias: {vitorias} ({percentual_vitorias:.2f}% de sucesso)")
+            enviar_mensagem(f"🚫 Derrota no Gale. Resetando padrão e aguardando novo ciclo.\n🏆 Vitórias: {vitorias} ({percentual_vitorias:.2f}% de sucesso)\n💰 Ganho acumulado: R${ganho_acumulado:.2f}")
             fazendo_gale = False
             resetar_entrada = True
         elif cores[-1] != cor_da_entrada:
+            banca -= aposta + protecao_branco  # Subtração da aposta inicial e proteção antes do Gale
             print(sinal_gale)
             print(proteger_branco_10)
             enviar_mensagem(sinal_gale)
             enviar_mensagem(proteger_branco_10)
             fazendo_gale = True
-            banca -= aposta + protecao_branco
             aposta *= 2  # Dobra a aposta
             resetar_entrada = False
 
@@ -191,6 +201,7 @@ def verificar_padroes(cores):
         if cores[-sequencia_para_entrada:] == ["Vermelho"] * sequencia_para_entrada:
             print(sinal_vermelho.format(n=sequencia_para_entrada))
             enviar_mensagem(sinal_vermelho.format(n=sequencia_para_entrada))
+            enviar_mensagem(sinal_vermelho.format(n=sequencia_para_entrada))
             entrada_realizada = True
             cor_da_entrada = "Preto"  # Entrada será no Preto
             aguardando_resultado = True
@@ -221,4 +232,3 @@ finally:
     print(msg_encerrado)
     enviar_mensagem(msg_encerrado)
     nav.quit()
-
