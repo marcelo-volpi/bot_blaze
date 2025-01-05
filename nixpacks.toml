@@ -1,0 +1,4 @@
+[phases]
+setup = "python3.11, gcc"
+install = "python -m venv --copies /opt/venv && ./opt/venv/bin/activate && pip install -r requirements.txt"
+start = "python bot.py"
