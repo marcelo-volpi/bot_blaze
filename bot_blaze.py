@@ -21,12 +21,12 @@ nav = webdriver.Chrome(options=chrome_options)
 
 # Mensagens de status
 msg_ativo = "✅ Bot Ativo"
-aviso_generico = "⚠️ Atenção para entrada na cor oposta:  "
-aviso_falso = "🚫 Alarme falso: Aguardando novo padrão 🚫"
+aviso_generico = "⚠️ Atenção para entrada na cor:  "
+aviso_falso = "🚫 Alarme falso: Aguardando novo padrão."
 sinal_vermelho = "⚫⚫ Atenção: Entrar no Preto \n⚫⚫"
 sinal_preto = "🔴🔴 Atenção entrar no Vermelho 🔴🔴"
 sinal_gale = "📢 GALE - Duplicar aposta repetindo a entrada."
-proteger_branco_10 = "⚪ Proteger patrimônio com 10% no Branco."
+proteger_branco_10 = "⚪ Lembrar de proteger patrimônio com 10% no Branco.⚪"
 msg_encerrado = "❌ Bot Encerrado"
 
 # Configuração do Telegram
@@ -55,16 +55,18 @@ fazendo_gale = False
 ultima_lista = []  # Armazena a última lista capturada
 alertado = False
 entrada_realizada = False  # Controla se a entrada foi realizada
-banca = 1000  # Banca inicial em reais
-aposta = 50  # Valor da aposta inicial
-vitorias = 0
+banca = 3630  # Banca inicial em reais
+aposta_inicial = 100
+aposta = aposta_inicial  # Valor da aposta inicial
+vitorias = 35
 perdas = 0
+protegido = 0
 aguardando_resultado = False  # Variável para aguardar o próximo giro após entrada
 resetar_entrada = False  # Variável para resetar padrão após conclusão de Gale
 cor_da_entrada = None  # Armazena a cor da entrada para verificar vitória
-banca_inicial = banca  # Armazena o valor inicial da banca para cálculo de vitórias e derrotas
+banca_inicial = 2000  # Armazena o valor inicial da banca para cálculo de vitórias e derrotas
 contador_atualizado = False  # Garante que vitória ou derrota seja contabilizada apenas uma vez
-ganho_acumulado = 0  # Acumula os ganhos totais
+
 
 # Acessar a página do jogo
 def acessar_pagina():
@@ -79,11 +81,13 @@ def acessar_pagina():
         print(f"Erro ao carregar a página: {e}")
 
 # Capturar resultados da roleta com base na cor
+from selenium.webdriver.common.by import By
+
 def capturar_resultados():
     try:
-        container = nav.find_element(By.ID, 'roulette-recent')  # Localiza o container principal
-        print(f"Conteúdo do container: {container.text}")
-        
+        # Localiza o contêiner principal baseado no novo HTML
+        container = nav.find_element(By.CLASS_NAME, 'entries.main')
+
         # Localiza os elementos das cores
         elementos = container.find_elements(By.CLASS_NAME, 'sm-box')
         resultados = []
@@ -106,10 +110,8 @@ def capturar_resultados():
 
 # Verificar padrões e enviar sinais
 def verificar_padroes(cores):
-    global fazendo_gale, alertado, entrada_realizada, aguardando_resultado, banca, aposta, vitorias, perdas, resetar_entrada, cor_da_entrada, banca_inicial, contador_atualizado, ganho_acumulado
+    global fazendo_gale, alertado, entrada_realizada, aguardando_resultado, banca, aposta, vitorias, perdas, protegido, resetar_entrada, cor_da_entrada, banca_inicial, contador_atualizado, ganho_acumulado
 
-    # Valor de proteção no branco (10% da aposta)
-    protecao_branco = aposta * 0.10
 
     # Reset do estado somente após vitória, derrota ou alarme falso
     if resetar_entrada:
@@ -121,87 +123,107 @@ def verificar_padroes(cores):
         aguardando_resultado = False
         cor_da_entrada = None
         contador_atualizado = False
+        aposta = aposta_inicial
         print(f"Após o reset: alertado={alertado}, entrada_realizada={entrada_realizada}, aguardando_resultado={aguardando_resultado}, cor_da_entrada={cor_da_entrada}")
         return
 
+    def calcular_ganho_acumulado():
+        global ganho_acumulado, banca_inicial, banca
+        ganho_acumulado = banca - banca_inicial
+
     # Aguardar o próximo resultado após entrada
     if aguardando_resultado:
+        # Reduz a aposta inicial sempre ao entrar
+        protecao_inicial = aposta_inicial * 0.10
+        banca -= (aposta_inicial + protecao_inicial)  # Reduz a primeira entrada imediatamente
         if cores[-1] == cor_da_entrada:  # Vitória
-            ganho = aposta * 2
-            lucro = ganho - (protecao_branco + aposta)  # Calcula o lucro líquido
-            banca += lucro  # Atualiza a banca com o lucro da entrada
-            ganho_acumulado = banca - banca_inicial  # Recalcula o ganho acumulado
-            if not contador_atualizado:
+            if fazendo_gale:  # Vitória com Gale
+                # Cálculo para vitória no Gale
+                ganho_bruto = aposta * 2  # Ganho bruto no Gale
+
+                # Atualiza a banca e exibe os resultados
+                banca += ganho_bruto
+                calcular_ganho_acumulado()
                 vitorias += 1
-                contador_atualizado = True
-            percentual_vitorias = (vitorias / (vitorias + perdas)) * 100 if (vitorias + perdas) > 0 else 0
-            print(f"✅✅✅ Vitória! ✅✅")
-            print(f"📊 Banca atual: R${banca:.2f}, Ganho acumulado: R${ganho_acumulado:.2f}")
-            enviar_mensagem(f"✅✅✅ Vitória! ✅✅\n📊 Banca atual: R${banca:.2f}\n🏆 Vitórias: {vitorias} ({percentual_vitorias:.2f}% de sucesso)\n💰 Ganho acumulado: R${ganho_acumulado:.2f}")
-            resetar_entrada = True
-            return  # Interrompe o fluxo após vitória
+                print(f"✅ Vitória com Gale!")
+                print(f"📊 Banca atual: R${banca:.2f}, Ganho acumulado: R${ganho_acumulado:.2f}")
+                enviar_mensagem(f"RELATORIO:\n✅ Vitória com Gale!\n📊 Banca atual: R${banca:.2f}\n🏆 Vitórias: {vitorias}\n💰 Ganho acumulado: R${ganho_acumulado:.2f}\n\n\n\n\n")
+                resetar_entrada = True
+                fazendo_gale = False
+
+            else:  # Vitória sem Gale
+                # Cálculo para vitória sem Gale
+                ganho_bruto = aposta_inicial * 2  # Ganho bruto
+
+                # Atualiza a banca e exibe os resultados
+                banca += ganho_bruto
+                calcular_ganho_acumulado()
+                vitorias += 1
+                print(f"✅ Vitória sem Gale!")
+                print(f"📊 Banca atual: R${banca:.2f}, Ganho acumulado: R${ganho_acumulado:.2f}")
+                enviar_mensagem(f"RELATORIO:\n✅ Vitória sem Gale!\n📊 Banca atual: R${banca:.2f}\n🏆 Vitórias: {vitorias}\n💰 Ganho acumulado: R${ganho_acumulado:.2f}\n\n\n\n\n")
+                resetar_entrada = True
+
+                return  # Interrompe o fluxo após vitória
 
         elif cores[-1] == "Branco":  # Branco
-            ganho_branco = protecao_branco * 14  # Branco paga 14 vezes o valor apostado
-            lucro = ganho_branco - (aposta + protecao_branco)
-            banca += lucro  # Atualiza a banca
-            ganho_acumulado = banca - banca_inicial  # Recalcula o ganho acumulado
-            if not contador_atualizado:
-                if lucro > 0:
-                    vitorias += 1
-                    percentual_vitorias = (vitorias / (vitorias + perdas)) * 100 if (vitorias + perdas) > 0 else 0
-                    print(f"⚪ Branco! Lucro desta entrada: R${lucro:.2f}.")
-                    print(f"📊 Banca atual: R${banca:.2f}, Ganho acumulado: R${ganho_acumulado:.2f}")
-                    enviar_mensagem(f"⚪ Branco! Lucro desta entrada: R${lucro:.2f}.\n📊 Banca atual: R${banca:.2f}\n🏆 Vitórias: {vitorias} ({percentual_vitorias:.2f}% de sucesso)\n💰 Ganho acumulado: R${ganho_acumulado:.2f}")
-                    contador_atualizado = True
-                elif lucro < 0:
-                    print(f"⚪ Branco! Redução de perdas.")
-                    print(f"📉 Banca atual: R${banca:.2f}")
-                    enviar_mensagem(f"⚪ Branco! Redução de perdas.\n📉 Banca atual: R${banca:.2f}")
-                    contador_atualizado = True
-            resetar_entrada = True
-            return  # Interrompe o fluxo após proteção no Branco
+            if fazendo_gale:
+                ganho_branco = protecao_gale * 14 # Branco paga 14 vezes a proteção
+                # Atualiza a banca e exibe os resultados
+                banca += ganho_branco
+                calcular_ganho_acumulado()
+                protegido += 1
+                print(f"⚪ Proteçao ativada!")
+                print(f"📊 Banca atual: R${banca:.2f}, Ganho acumulado: R${ganho_acumulado:.2f}")
+                enviar_mensagem(f"RELATORIO:\n⚪ Proteçao ativada!!\n📊 Banca atual: R${banca:.2f}\n🏆 Vitórias: {vitorias}\n💰 Ganho acumulado: R${ganho_acumulado:.2f}\n⚪ Protegidos: {protegido}\n\n\n\n")
+                fazendo_gale = False
+                resetar_entrada = True
+                
+            else:
+                ganho_branco = protecao_inicial * 14
+                calcular_ganho_acumulado()
+                protegido += 1
+                banca += ganho_branco
+                print(f"⚪ Proteçao ativada!")
+                print(f"📊 Banca atual: R${banca:.2f}, Ganho acumulado: R${ganho_acumulado:.2f}")
+                enviar_mensagem(f"RELATORIO:\n⚪ Proteçao ativada!!\n📊 Banca atual: R${banca:.2f}\n🏆 Vitórias: {vitorias}\n💰 Ganho acumulado: R${ganho_acumulado:.2f}\n⚪ Protegidos: {protegido}\n\n\n\n")
+                resetar_entrada = True
+                return  # Interrompe o fluxo após vitória no Branco
 
-        elif cores[-1] != cor_da_entrada:  # Derrota no Gale ou entrada inicial
-            perda = aposta + protecao_branco
-            banca -= perda  # Subtrai a perda da banca
-            ganho_acumulado = banca - banca_inicial  # Recalcula o ganho acumulado
-
-            if fazendo_gale:  # Gale ativo
+        elif cores[-1] != cor_da_entrada:  # Derrota
+            if fazendo_gale:  # Derrota no Gale
+                # Cálculo das perdas no Gale
+                calcular_ganho_acumulado()
                 perdas += 1
-                print(f"🚫 Derrota no Gale.")
-                print(f"📉 Banca atual após Gale: R${banca:.2f}, Ganho acumulado: R${ganho_acumulado:.2f}")
-                enviar_mensagem(f"🚫 Derrota no Gale.\n📉 Banca atual: R${banca:.2f}\n💰 Ganho acumulado: R${ganho_acumulado:.2f}")
-                resetar_entrada = True  # Finaliza o Gale
-                fazendo_gale = False  # Reseta o estado do Gale
-                aposta = 50  # Reseta o valor da aposta inicial
-                return  # Interrompe o fluxo após derrota no Gale
+                print(f"🚫 Derrota no Gale!")
+                print(f"📉 Banca atual: R${banca:.2f}, Ganho acumulado: R${ganho_acumulado:.2f}")
+                enviar_mensagem(f"RELATORIO:\n🚫 Derrota no Gale!\n📉 Banca atual: R${banca:.2f}\n💰 Ganho acumulado: R${ganho_acumulado:.2f}\n\n\n\n\n")
+                resetar_entrada = True
+                fazendo_gale = False
 
-            else:  # Primeira tentativa, inicia Gale
+            else:  # Derrota inicial, inicia Gale
                 print("🚫 Derrota inicial. Iniciando Gale.")
                 print(sinal_gale)
-                print(proteger_branco_10)
                 enviar_mensagem(sinal_gale)
-                enviar_mensagem(proteger_branco_10)
-                fazendo_gale = True  # Ativa o estado do Gale
-                aposta *= 2  # Dobra o valor da aposta para o Gale
-                aguardando_resultado = True  # Mantém o estado para o próximo giro
-                return  # Interrompe o fluxo após ativar o Gale
-
+                aposta = aposta_inicial * 2
+                protecao_gale = protecao_inicial * 2
+                banca -= aposta + protecao_gale
+                fazendo_gale = True  # Ativa o Gale
+                return  # Interrompe o fluxo após derrota
 
 
     # Verifica se há n-1 cores consecutivas e envia alerta apenas uma vez
     if not alertado and not entrada_realizada:
         if cores[-(sequencia_para_entrada-1):] == ["Vermelho"] * (sequencia_para_entrada-1):
-            print(aviso_generico + "Preto")
+            print(aviso_generico + "Preto⚫")
             print(proteger_branco_10)
-            enviar_mensagem(aviso_generico + "Preto")
+            enviar_mensagem(aviso_generico + "Preto⚫")
             enviar_mensagem(proteger_branco_10)
             alertado = True
         elif cores[-(sequencia_para_entrada-1):] == ["Preto"] * (sequencia_para_entrada-1):
-            print(aviso_generico + "Vermelho")
+            print(aviso_generico + "Vermelho 🔴")
             print(proteger_branco_10)
-            enviar_mensagem(aviso_generico + "Vermelho")
+            enviar_mensagem(aviso_generico + "Vermelho 🔴")
             enviar_mensagem(proteger_branco_10)
             alertado = True
 
@@ -209,14 +231,14 @@ def verificar_padroes(cores):
     if alertado and not entrada_realizada:
         if cores[-sequencia_para_entrada:-1] == ["Vermelho"] * (sequencia_para_entrada-1) and cores[-1] != "Vermelho":
             print(aviso_falso)
-            enviar_mensagem(aviso_falso)
+            enviar_mensagem(aviso_falso + "\n\n\n\n\n")
             resetar_entrada = True
             alertado = False  # Reseta o estado do alerta para permitir novos padrões
             entrada_realizada = False  # Reseta o padrão para novas entradas
 
         elif cores[-sequencia_para_entrada:-1] == ["Preto"] * (sequencia_para_entrada-1) and cores[-1] != "Preto":
             print(aviso_falso)
-            enviar_mensagem(aviso_falso)
+            enviar_mensagem(aviso_falso + "\n\n\n\n\n")
             resetar_entrada = True
             alertado = False  # Reseta o estado do alerta para permitir novos padrões
             entrada_realizada = False  # Reseta o padrão para novas entradas  
