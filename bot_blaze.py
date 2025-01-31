@@ -34,7 +34,7 @@ token = os.getenv("TOKEN_TELEGRAM")
 chat_id = os.getenv("CHAT_ID")
 
 # Variáveis configuráveis pelo usuário
-sequencia_para_entrada = 5  # Configuração inicial: 3 cores iguais para entrada
+sequencia_para_entrada = 5 # Configuração inicial: 3 cores iguais para entrada
 notificacoes_ativas = True  # Variável para ativar/desativar notificações do Telegram
 
 # Função para enviar mensagem no Telegram
@@ -49,16 +49,20 @@ def enviar_mensagem(mensagem):
     else:
         print(f"Notificação desativada: {mensagem}")
 
+    
+
 # Variáveis globais para controle
 historico_cores = []
 fazendo_gale = False
 ultima_lista = []  # Armazena a última lista capturada
 alertado = False
 entrada_realizada = False  # Controla se a entrada foi realizada
-banca = 3630  # Banca inicial em reais
+banca = 3110  # Banca inicial em reais
 aposta_inicial = 100
-aposta = aposta_inicial  # Valor da aposta inicial
-vitorias = 35
+protecao_inicial = aposta_inicial * 0.10
+aposta_gale = 2 * aposta_inicial
+protecao_gale = protecao_inicial * 2  # Valor da aposta inicial
+vitorias = 52
 perdas = 0
 protegido = 0
 aguardando_resultado = False  # Variável para aguardar o próximo giro após entrada
@@ -66,7 +70,8 @@ resetar_entrada = False  # Variável para resetar padrão após conclusão de Ga
 cor_da_entrada = None  # Armazena a cor da entrada para verificar vitória
 banca_inicial = 2000  # Armazena o valor inicial da banca para cálculo de vitórias e derrotas
 contador_atualizado = False  # Garante que vitória ou derrota seja contabilizada apenas uma vez
-
+em_pausa = False
+vitorias_consecutivas = 0
 
 # Acessar a página do jogo
 def acessar_pagina():
@@ -110,8 +115,16 @@ def capturar_resultados():
 
 # Verificar padrões e enviar sinais
 def verificar_padroes(cores):
-    global fazendo_gale, alertado, entrada_realizada, aguardando_resultado, banca, aposta, vitorias, perdas, protegido, resetar_entrada, cor_da_entrada, banca_inicial, contador_atualizado, ganho_acumulado
+    global fazendo_gale, alertado, entrada_realizada, aguardando_resultado, banca, aposta, vitorias, perdas, protegido, resetar_entrada, cor_da_entrada, banca_inicial, contador_atualizado, ganho_acumulado, vitorias_consecutivas, em_pausa
 
+    if em_pausa:
+        # Aguardar o padrão de N + 2 cores iguais
+        if cores[-(sequencia_para_entrada + 2):] == [cores[-1]] * (sequencia_para_entrada + 2):
+            print(f"Padrão de pausa detectado: {cores[-(sequencia_para_entrada + 2):]}")
+            enviar_mensagem(f"Padrão de pausa detectado: {cores[-(sequencia_para_entrada + 2):]}")
+            em_pausa = False
+            vitorias_consecutivas = 0  # Reseta o contador de vitórias consecutivas
+        return
 
     # Reset do estado somente após vitória, derrota ou alarme falso
     if resetar_entrada:
@@ -133,14 +146,12 @@ def verificar_padroes(cores):
 
     # Aguardar o próximo resultado após entrada
     if aguardando_resultado:
-        # Reduz a aposta inicial sempre ao entrar
-        protecao_inicial = aposta_inicial * 0.10
-        banca -= (aposta_inicial + protecao_inicial)  # Reduz a primeira entrada imediatamente
         if cores[-1] == cor_da_entrada:  # Vitória
+            vitorias_consecutivas += 1
             if fazendo_gale:  # Vitória com Gale
                 # Cálculo para vitória no Gale
-                ganho_bruto = aposta * 2  # Ganho bruto no Gale
-
+                banca -= (aposta_gale + protecao_gale)
+                ganho_bruto = aposta_gale * 2
                 # Atualiza a banca e exibe os resultados
                 banca += ganho_bruto
                 calcular_ganho_acumulado()
@@ -152,8 +163,10 @@ def verificar_padroes(cores):
                 fazendo_gale = False
 
             else:  # Vitória sem Gale
+                banca -= (aposta_inicial + protecao_inicial)
+
                 # Cálculo para vitória sem Gale
-                ganho_bruto = aposta_inicial * 2  # Ganho bruto
+                ganho_bruto = (aposta_inicial * 2)  # Ganho bruto
 
                 # Atualiza a banca e exibe os resultados
                 banca += ganho_bruto
@@ -162,12 +175,17 @@ def verificar_padroes(cores):
                 print(f"✅ Vitória sem Gale!")
                 print(f"📊 Banca atual: R${banca:.2f}, Ganho acumulado: R${ganho_acumulado:.2f}")
                 enviar_mensagem(f"RELATORIO:\n✅ Vitória sem Gale!\n📊 Banca atual: R${banca:.2f}\n🏆 Vitórias: {vitorias}\n💰 Ganho acumulado: R${ganho_acumulado:.2f}\n\n\n\n\n")
-                resetar_entrada = True
-
-                return  # Interrompe o fluxo após vitória
-
+                
+            if vitorias_consecutivas >= 4:
+                print("⏸️ Pausando após 4 vitórias consecutivas.")
+                enviar_mensagem("⏸️ Pausando após 4 vitórias consecutivas, aguardando novo padrao.")
+                em_pausa = True    
+            resetar_entrada = True
+            return
+        
         elif cores[-1] == "Branco":  # Branco
             if fazendo_gale:
+                banca -= (aposta_gale + protecao_gale)
                 ganho_branco = protecao_gale * 14 # Branco paga 14 vezes a proteção
                 # Atualiza a banca e exibe os resultados
                 banca += ganho_branco
@@ -180,10 +198,11 @@ def verificar_padroes(cores):
                 resetar_entrada = True
                 
             else:
-                ganho_branco = protecao_inicial * 14
+                banca -= (aposta_inicial + protecao_inicial)
+                ganho_branco = (protecao_inicial * 14)
+                banca += ganho_branco
                 calcular_ganho_acumulado()
                 protegido += 1
-                banca += ganho_branco
                 print(f"⚪ Proteçao ativada!")
                 print(f"📊 Banca atual: R${banca:.2f}, Ganho acumulado: R${ganho_acumulado:.2f}")
                 enviar_mensagem(f"RELATORIO:\n⚪ Proteçao ativada!!\n📊 Banca atual: R${banca:.2f}\n🏆 Vitórias: {vitorias}\n💰 Ganho acumulado: R${ganho_acumulado:.2f}\n⚪ Protegidos: {protegido}\n\n\n\n")
@@ -192,7 +211,9 @@ def verificar_padroes(cores):
 
         elif cores[-1] != cor_da_entrada:  # Derrota
             if fazendo_gale:  # Derrota no Gale
+                vitorias_consecutivas = 0
                 # Cálculo das perdas no Gale
+                banca -= (aposta_gale + protecao_gale)
                 calcular_ganho_acumulado()
                 perdas += 1
                 print(f"🚫 Derrota no Gale!")
@@ -202,12 +223,10 @@ def verificar_padroes(cores):
                 fazendo_gale = False
 
             else:  # Derrota inicial, inicia Gale
+                banca -= (aposta_inicial + protecao_inicial)
                 print("🚫 Derrota inicial. Iniciando Gale.")
                 print(sinal_gale)
                 enviar_mensagem(sinal_gale)
-                aposta = aposta_inicial * 2
-                protecao_gale = protecao_inicial * 2
-                banca -= aposta + protecao_gale
                 fazendo_gale = True  # Ativa o Gale
                 return  # Interrompe o fluxo após derrota
 
